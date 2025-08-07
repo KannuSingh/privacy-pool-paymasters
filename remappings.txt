@@ -1,0 +1,7 @@
+@account-abstraction/=lib/account-abstraction/
+@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
+@oz/=lib/openzeppelin-contracts/contracts/
+interfaces/=lib/privacy-pools-core/packages/contracts/src/interfaces/
+contracts/lib/=lib/privacy-pools-core/packages/contracts/src/contracts/lib/
+contracts/=lib/privacy-pools-core/packages/contracts/src/contracts/
+forge-std/=lib/forge-std/src/
