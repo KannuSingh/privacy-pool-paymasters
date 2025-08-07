@@ -1,5 +1,8 @@
+# General
+yarn-error.log
 node_modules
-.env
+.DS_STORE
+.vscode
 
 # Hardhat files
 /cache
@@ -16,4 +19,26 @@ node_modules
 # Hardhat Ignition default folder for deployments against a local node
 ignition/deployments
 
-/out
+# Foundry files
+cache
+out-via-ir
+
+# Config files
+.env
+
+# Avoid ignoring gitkeep
+!/**/.gitkeep
+
+# Keep the latest deployment only
+broadcast/*/*/*
+
+# Out dir
+out
+crytic-export
+
+# Echidna corpus
+test/invariants/fuzz/echidna_coverage
+*/**/corpus
+
+# Coverage files
+lcov.info
