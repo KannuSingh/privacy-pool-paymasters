@@ -87,8 +87,7 @@ contract Deploy is Script {
         address payable paymaster = payable(address(new SimplePrivacyPoolPaymaster(
             IERC4337EntryPoint(ERC4337_ENTRYPOINT),
             IEntrypoint(privacyEntrypoint),
-            IPrivacyPool(ethPrivacyPool),
-            IWithdrawalVerifier(withdrawalVerifier)
+            IPrivacyPool(ethPrivacyPool)
         )));
         console.log("   Paymaster deployed:", paymaster);
 
