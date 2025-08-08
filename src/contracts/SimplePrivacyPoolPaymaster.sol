@@ -14,12 +14,12 @@ import {Constants} from "contracts/lib/Constants.sol";
 import {IAccountValidator} from "./interfaces/IAccountValidator.sol";
 import {IWithdrawalVerifier} from "./interfaces/IWithdrawalVerifier.sol";
 
-// Withdrawal validation is now embedded in the paymaster
-
 /**
  * @title SimplePrivacyPoolPaymaster
  * @notice ERC-4337 Paymaster for Privacy Pool withdrawals
- * @dev This paymaster performs comprehensive validation to ensure it only sponsors successful withdrawals
+ * @dev This paymaster performs comprehensive validation using embedded withdrawal validation
+ *      to ensure it only sponsors successful privacy pool withdrawals. It validates ZK proofs,
+ *      economics, and withdrawal parameters before sponsoring UserOperations.
  */
 contract SimplePrivacyPoolPaymaster is BasePaymaster {
     using ProofLib for ProofLib.WithdrawProof;
@@ -35,9 +35,6 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
 
     /// @notice ETH Privacy Pool contract
     IPrivacyPool public immutable ETH_PRIVACY_POOL;
-
-    /// @notice Withdrawal verifier contract for ZK proof validation
-    IWithdrawalVerifier public immutable WITHDRAWAL_VERIFIER;
 
     /// @notice Estimated gas cost for postOp operations (includes ETH refund transfers)
     uint256 public constant POST_OP_GAS_LIMIT = 32000;
@@ -98,17 +95,14 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
      * @param _entryPoint ERC-4337 EntryPoint contract
      * @param _privacyPoolEntrypoint Privacy Pool Entrypoint contract
      * @param _ethPrivacyPool ETH Privacy Pool contract
-     * @param _withdrawalVerifier ZK proof verifier contract
      */
     constructor(
         IEntryPoint _entryPoint,
         IEntrypoint _privacyPoolEntrypoint,
-        IPrivacyPool _ethPrivacyPool,
-        IWithdrawalVerifier _withdrawalVerifier
+        IPrivacyPool _ethPrivacyPool
     ) BasePaymaster(_entryPoint) {
         PRIVACY_POOL_ENTRYPOINT = _privacyPoolEntrypoint;
         ETH_PRIVACY_POOL = _ethPrivacyPool;
-        WITHDRAWAL_VERIFIER = _withdrawalVerifier;
     }
 
      /*//////////////////////////////////////////////////////////////
@@ -245,7 +239,8 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
 
     /**
      * @notice Validate a UserOperation for Privacy Pool withdrawal
-     * @dev Performs the same validation as Privacy Pool to ensure success
+     * @dev Performs comprehensive validation including ZK proof verification, economics validation,
+     *      and withdrawal parameter checks to ensure the paymaster only sponsors successful withdrawals
      * @param userOp The UserOperation to validate
      * @param userOpHash Hash of the UserOperation
      * @param maxCost Maximum gas cost the paymaster might pay
@@ -313,24 +308,6 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Self-validation execute method (mimics SimpleAccount.execute)
-     * @dev Only callable by address(this) during validation - makes public ABI ugly but works
-     */
-    function execute(address target, uint256 value, bytes calldata data) external {
-        require(msg.sender == address(this), "Only self-call");
-        
-        // Validate target is Privacy Pool Entrypoint
-        require(target == address(PRIVACY_POOL_ENTRYPOINT), "Invalid target");
-        
-        // Validate no ETH transfer
-        require(value == 0, "No ETH transfers allowed");
-        
-        // Call ourselves to validate the relay call
-        (bool success,) = address(this).call(data);
-        require(success, "Relay validation failed");
-    }
-
-    /**
      * @notice Self-validation relay method (mimics Entrypoint.relay)
      * @dev Only callable by address(this) during validation
      */
@@ -339,7 +316,7 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
         ProofLib.WithdrawProof calldata proof,
         uint256 scope
     ) external {
-        require(msg.sender == address(this), "Only self-call");
+        require(msg.sender == address(this), "Only self-call allowed");
         
         // Validate withdrawal parameters
         require(withdrawal.processooor == address(PRIVACY_POOL_ENTRYPOINT), "Invalid processooor");
@@ -379,7 +356,9 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Validate Privacy Pool withdrawal using self-validation pattern
+     * @notice Validate Privacy Pool withdrawal using optimized self-validation pattern
+     * @dev This method validates the target and value, then directly calls the relay method
+     *      using Solidity's built-in dispatcher for efficient parameter decoding
      * @param target The target address being called
      * @param value ETH value being sent  
      * @param data The call data to the Privacy Pool Entrypoint
@@ -390,13 +369,20 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
         uint256 value,
         bytes memory data
     ) internal returns (bool) {
-        // Use self-validation pattern instead of staticcall to real contract
-        // This leverages Solidity's dispatcher to decode parameters automatically
-        try this.execute(target, value, data) {
-            return true;
-        } catch {
+        // Validate target is Privacy Pool Entrypoint
+        if (target != address(PRIVACY_POOL_ENTRYPOINT)) {
             return false;
         }
+        
+        // Validate no ETH transfer
+        if (value != 0) {
+            return false;
+        }
+        
+        // Direct call to relay method - let Solidity's dispatcher handle parameter decoding
+        // This is more gas efficient than manually decoding parameters
+        (bool success, ) = address(this).call(data);
+        return success;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -491,7 +477,7 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
 
         // 6. Verify Groth16 proof with withdrawal verifier
         if (
-            !WITHDRAWAL_VERIFIER.verifyProof(
+            !IWithdrawalVerifier(address(ETH_PRIVACY_POOL.WITHDRAWAL_VERIFIER())).verifyProof(
                 proof.pA,
                 proof.pB,
                 proof.pC,
