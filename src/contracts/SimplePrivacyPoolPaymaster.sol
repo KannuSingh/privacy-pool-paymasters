@@ -14,8 +14,6 @@ import {Constants} from "contracts/lib/Constants.sol";
 import {IAccountValidator} from "./interfaces/IAccountValidator.sol";
 import {IWithdrawalVerifier} from "./interfaces/IWithdrawalVerifier.sol";
 
-import "forge-std/console.sol";
-
 // Withdrawal validation is now embedded in the paymaster
 
 /**
@@ -265,7 +263,6 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
     {
         // 1. Check post-op gas limit is sufficient
         if (userOp.unpackPostOpGasLimit() < POST_OP_GAS_LIMIT) {
-            console.log("   ERROR: Insufficient post-op gas limit");
             revert InsufficientPostOpGasLimit();
         }
         // 2. Only support fresh accounts - extract factory from initCode
@@ -282,10 +279,8 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
             .validateAndExtract(userOp.callData);
         // 4. Validate withdrawal logic
         if (!_validatePrivacyPoolWithdrawal(target, value, data)) {
-            console.log("Withdrawal validation failed for target:", target);
             return ("", _VALIDATION_FAILED);
         }
-        console.log("   Withdrawal validation passed");
         // 5. Validate economics using values from transient storage
         // Values were already decoded and validated in self-validation
         uint256 withdrawnValue;
@@ -299,7 +294,6 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
         uint256 expectedFeeAmount = (withdrawnValue * relayFeeBPS) / 10_000;
         
         if (expectedFeeAmount < maxCost) {
-            console.log("Insufficient paymaster cost:", expectedFeeAmount, " < ", maxCost);
             return ("", _VALIDATION_FAILED);
         }
         
