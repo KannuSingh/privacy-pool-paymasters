@@ -84,11 +84,14 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
     error ExistingAccountNotSupported();
     error InvalidValidator();
     error InvalidFactory();
-    error FactoryAlreadySupported();
     error FactoryNotSupported();
     error WithdrawalValidationFailed();
     error InsufficientPaymasterCost();
     error WrongFeeRecipient();
+    error UnauthorizedCaller();
+    error InvalidProcessooor();
+    error InvalidScope();
+    error ZeroFeeNotAllowed();
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -313,18 +316,31 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Self-validation relay method (mimics Entrypoint.relay)
-     * @dev Only callable by address(this) during validation
+     * @notice Self-validation relay method (mimics Privacy Pool Entrypoint.relay)
+     * @dev Only callable by address(this) during validation phase. This method performs
+     *      ZK proof validation and stores withdrawal parameters in transient storage
+     *      for economic validation in the main validation function.
+     *      
+     *      This pattern allows us to validate the withdrawal without actually executing it,
+     *      ensuring the paymaster only sponsors valid Privacy Pool withdrawals.
+     *      
+     * @param withdrawal The withdrawal parameters to validate
+     * @param proof The ZK withdrawal proof
+     * @param scope The scope identifier for the privacy pool
      */
     function relay(
         IPrivacyPool.Withdrawal calldata withdrawal,
         ProofLib.WithdrawProof calldata proof,
         uint256 scope
     ) external {
-        require(msg.sender == address(this), "Only self-call allowed");
+        if (msg.sender != address(this)) {
+            revert UnauthorizedCaller();
+        }
         
-        // Validate withdrawal parameters
-        require(withdrawal.processooor == address(PRIVACY_POOL_ENTRYPOINT), "Invalid processooor");
+        // Validate withdrawal targets the correct processooor (Privacy Pool Entrypoint)
+        if (withdrawal.processooor != address(PRIVACY_POOL_ENTRYPOINT)) {
+            revert InvalidProcessooor();
+        }
         
         // Decode and validate relay data structure
         IEntrypoint.RelayData memory relayData = abi.decode(
@@ -332,11 +348,15 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
             (IEntrypoint.RelayData)
         );
         
-        // Validate fee recipient is this paymaster
-        require(relayData.feeRecipient == address(this), "Wrong fee recipient");
+        // Ensure this paymaster receives the relay fees
+        if (relayData.feeRecipient != address(this)) {
+            revert WrongFeeRecipient();
+        }
         
-        // Validate scope matches our ETH pool  
-        require(scope == ETH_PRIVACY_POOL.SCOPE(), "Invalid scope");
+        // Validate scope matches our supported ETH Privacy Pool
+        if (scope != ETH_PRIVACY_POOL.SCOPE()) {
+            revert InvalidScope();
+        }
         // CRITICAL: Verify ZK proof to ensure withdrawal is valid
         if (!_validateWithdrawCall(withdrawal, proof)) {
             revert WithdrawalValidationFailed();
@@ -352,8 +372,10 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
             tstore(1, relayFeeBPS)
         }
         
-        // Basic validation - no zero fees
-        require(relayFeeBPS > 0, "No fee specified");
+        // Ensure non-zero fees to prevent free withdrawals
+        if (relayFeeBPS == 0) {
+            revert ZeroFeeNotAllowed();
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
