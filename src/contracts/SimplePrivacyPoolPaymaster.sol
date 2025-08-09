@@ -28,6 +28,10 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS
     //////////////////////////////////////////////////////////////*/
+    
+    /// @notice Return value for signature validation failures only
+    /// @dev Should only be used for signature failures, not validation logic failures.
+    ///      Validation logic failures should use revert() for better UX and gas estimation.
     uint256 internal constant _VALIDATION_FAILED = 1;
 
     /// @notice Privacy Pool Entrypoint contract
@@ -274,7 +278,7 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
             .validateAndExtract(userOp.callData);
         // 4. Validate withdrawal logic
         if (!_validatePrivacyPoolWithdrawal(target, value, data)) {
-            return ("", _VALIDATION_FAILED);
+            revert WithdrawalValidationFailed();
         }
         // 5. Validate economics using values from transient storage
         // Values were already decoded and validated in self-validation
@@ -288,8 +292,9 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
         
         uint256 expectedFeeAmount = (withdrawnValue * relayFeeBPS) / 10_000;
         
+        // Ensure paymaster receives enough fees to cover gas costs
         if (expectedFeeAmount < maxCost) {
-            return ("", _VALIDATION_FAILED);
+            revert InsufficientPaymasterCost();
         }
         
         // Fee recipient validation already done in self-validation relay method
