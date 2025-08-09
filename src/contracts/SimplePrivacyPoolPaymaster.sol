@@ -284,7 +284,7 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
             revert WithdrawalValidationFailed();
         }
         // 5. Validate economics using values from transient storage
-        // Values were already decoded and validated in self-validation
+        // Values were decoded and validated during internal relay call execution
         uint256 withdrawnValue;
         uint256 relayFeeBPS;
         
@@ -300,7 +300,7 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
             revert InsufficientPaymasterCost();
         }
         
-        // Fee recipient validation already done in self-validation relay method
+        // Fee recipient validation already confirmed in internal relay method
         
         // Clear transient storage for composability
         assembly {
@@ -312,17 +312,17 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
     }
 
     /*//////////////////////////////////////////////////////////////
-                        SELF-VALIDATION METHODS
+                        EMBEDDED WITHDRAWAL VALIDATION
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Self-validation relay method (mimics Privacy Pool Entrypoint.relay)
-     * @dev Only callable by address(this) during validation phase. This method performs
-     *      ZK proof validation and stores withdrawal parameters in transient storage
-     *      for economic validation in the main validation function.
+     * @notice Internal relay method that mirrors Privacy Pool Entrypoint.relay()
+     * @dev This method is called internally by the paymaster to validate withdrawal proofs
+     *      without actually executing the withdrawal. It performs the same validation as
+     *      the real Privacy Pool but stores results in transient storage for economic checks.
      *      
-     *      This pattern allows us to validate the withdrawal without actually executing it,
-     *      ensuring the paymaster only sponsors valid Privacy Pool withdrawals.
+     *      Only callable by the paymaster itself during UserOperation validation to ensure
+     *      secure proof verification before gas sponsorship approval.
      *      
      * @param withdrawal The withdrawal parameters to validate
      * @param proof The ZK withdrawal proof
@@ -383,13 +383,15 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Validate Privacy Pool withdrawal using optimized self-validation pattern
-     * @dev This method validates the target and value, then directly calls the relay method
-     *      using Solidity's built-in dispatcher for efficient parameter decoding
-     * @param target The target address being called
-     * @param value ETH value being sent  
-     * @param data The call data to the Privacy Pool Entrypoint
-     * @return true if validation passes
+     * @notice Validate Privacy Pool withdrawal by performing embedded proof verification
+     * @dev This method validates the target and value, then calls the internal relay method
+     *      to perform comprehensive ZK proof validation. This embedded validation approach
+     *      allows the paymaster to verify withdrawal validity without external dependencies.
+     *      
+     * @param target The target address being called (should be Privacy Pool Entrypoint)
+     * @param value ETH value being sent (should be 0 for withdrawals)
+     * @param data The call data to the Privacy Pool Entrypoint (relay method call)
+     * @return true if validation passes, false otherwise
      */
     function _validatePrivacyPoolWithdrawal(
         address target,

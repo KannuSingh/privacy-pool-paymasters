@@ -1,7 +1,7 @@
 {
   "name": "privacy-pool-paymasters",
   "version": "1.0.0",
-  "description": "ERC-4337 paymaster implementation for Privacy Pool withdrawals with self-validation pattern and modular account factory support",
+  "description": "ERC-4337 paymaster implementation for Privacy Pool withdrawals with embedded proof validation and modular account factory support",
   "scripts": {
     "e2e": "ts-node scripts/PaymasterE2E.ts",
     "deploy": "anvil --fork-url https://mainnet.base.org --host 0.0.0.0 --port 8545 & sleep 3 && forge script script/Deploy.s.sol --rpc-url http://localhost:8545 --broadcast --legacy --skip-simulation; kill %1",
