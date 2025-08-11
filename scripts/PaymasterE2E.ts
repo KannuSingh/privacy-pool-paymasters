@@ -32,7 +32,7 @@ import { toSimpleSmartAccount } from "permissionless/accounts";
 import { createSmartAccountClient } from "permissionless";
 import { poseidon } from "maci-crypto/build/ts/hashing.js";
 import { LeanIMT } from "@zk-kit/lean-imt";
-import { WithdrawalProofGenerator } from "./WithdrawalProofGenerator";
+import { WithdrawalProofGenerator } from "../utils/WithdrawalProofGenerator";
 import { randomInt } from "crypto";
 import { decode } from "punycode";
 
