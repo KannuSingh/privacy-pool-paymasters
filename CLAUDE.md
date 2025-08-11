@@ -26,7 +26,7 @@ docker compose up -d  # Start Anvil blockchain + Alto bundler + contract deploye
 
 ### Circuit and ZK Proof Testing
 - Circuit artifacts are pre-built in `circuits/build/` and `circuits/keys/`
-- ZK proof generation handled in `scripts/WithdrawalProofGenerator.ts`
+- ZK proof generation handled in `utils/WithdrawalProofGenerator.ts`
 - Uses snarkjs with Groth16 proving system
 
 ## Architecture Overview
