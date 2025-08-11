@@ -105,3 +105,5 @@ site/
 
 # Keep gitkeep files
 !**/.gitkeep
+
+privacy-pool-secrets.json
