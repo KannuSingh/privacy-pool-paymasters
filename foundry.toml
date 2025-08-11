@@ -10,3 +10,14 @@ evm_version = 'cancun'
 bytecode_hash = "none"
 cbor_metadata = false
 auto_detect_remappings = false
+
+# Network configurations
+[rpc_endpoints]
+base-sepolia = "https://sepolia.base.org"
+localhost = "http://localhost:8545"
+
+# Etherscan v2 configuration - uses ETHERSCAN_API_KEY for all chains
+etherscan_api_key = "${ETHERSCAN_API_KEY}"
+
+[etherscan]
+base-sepolia = { key = "${ETHERSCAN_API_KEY}", url = "https://api.etherscan.io/v2/api?chainid=84532" }

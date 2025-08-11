@@ -5,6 +5,20 @@
   "scripts": {
     "e2e": "ts-node scripts/PaymasterE2E.ts",
     "deploy": "anvil --fork-url https://mainnet.base.org --host 0.0.0.0 --port 8545 & sleep 3 && forge script script/Deploy.s.sol --rpc-url http://localhost:8545 --broadcast --legacy --skip-simulation; kill %1",
+    "deploy:counter": "forge script script/DeployCounter.s.sol --rpc-url $RPC_URL --broadcast --verify",
+    "deploy:counter:local": "forge script script/DeployCounter.s.sol --rpc-url http://localhost:8545 --broadcast",
+    "deploy:withdrawal-verifier": "forge script script/DeployWithdrawalVerifier.s.sol --rpc-url $RPC_URL --broadcast --verify",
+    "deploy:withdrawal-verifier:local": "forge script script/DeployWithdrawalVerifier.s.sol --rpc-url http://localhost:8545 --broadcast",
+    "deploy:commitment-verifier": "forge script script/DeployCommitmentVerifier.s.sol --rpc-url $RPC_URL --broadcast --verify",
+    "deploy:commitment-verifier:local": "forge script script/DeployCommitmentVerifier.s.sol --rpc-url http://localhost:8545 --broadcast",
+    "deploy:entrypoint": "forge script script/DeployEntrypoint.s.sol --rpc-url $RPC_URL --broadcast --verify",
+    "deploy:entrypoint:local": "forge script script/DeployEntrypoint.s.sol --rpc-url http://localhost:8545 --broadcast",
+    "deploy:privacy-pool": "forge script script/DeployPrivacyPool.s.sol --rpc-url $RPC_URL --broadcast --verify",
+    "deploy:privacy-pool:local": "forge script script/DeployPrivacyPool.s.sol --rpc-url http://localhost:8545 --broadcast",
+    "deploy:paymaster": "forge script script/DeployPaymaster.s.sol --rpc-url $RPC_URL --broadcast --verify",
+    "deploy:paymaster:local": "forge script script/DeployPaymaster.s.sol --rpc-url http://localhost:8545 --broadcast",
+    "deploy:account-validator": "forge script script/DeployAccountValidator.s.sol --rpc-url $RPC_URL --broadcast --verify",
+    "deploy:account-validator:local": "forge script script/DeployAccountValidator.s.sol --rpc-url http://localhost:8545 --broadcast",
     "test": "forge test",
     "build": "forge build"
   },
@@ -26,6 +40,7 @@
     "@nomicfoundation/hardhat-toolbox-viem": "^3.0.0",
     "@types/minimatch": "^6.0.0",
     "@types/node": "^20.0.0",
+    "dotenv": "17.2.1",
     "hardhat": "^2.26.2",
     "ts-node": "^10.9.0",
     "typescript": "^5.0.0"
