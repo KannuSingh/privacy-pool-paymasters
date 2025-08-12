@@ -92,6 +92,11 @@ contract Deploy is Script {
 
         // 6. Configure expected smart account for deterministic pattern
         console.log("6. Configuring Expected Smart Account...");
+        // NOTE: To get the correct address:
+        // 1. Deploy a SimpleAccount using SimpleAccountFactory with the same private key
+        //    used in your withdrawal scripts (e.g., Hardhat account #0)
+        // 2. Use SimpleAccountFactory.getAddress(owner, salt) to get deterministic address
+        // 3. Or run a withdrawal script once to deploy the account and use that address
         address expectedAccount = 0xa3aBDC7f6334CD3EE466A115f30522377787c024;
         SimplePrivacyPoolPaymaster(paymaster).setExpectedSmartAccount(expectedAccount);
         console.log("   Expected smart account set to:", expectedAccount);
