@@ -107,15 +107,28 @@ Copy environment template:
 cp .env.example .env
 ```
 
-### Integration Example
+### Smart Account Integration
+
+This implementation demonstrates using **SimpleAccount** from the [@account-abstraction/contracts](https://github.com/eth-infinitism/account-abstraction) repository. The code can be easily modified to support other account implementations like Biconomy, Kernel, or Safe or other more gas-efficient account:
 
 ```typescript
 import { createSmartAccountClient } from "permissionless";
 import { privateKeyToAccount } from "viem/accounts";
+import { simpleSmartAccount } from "permissionless/accounts";
+
+// Create SimpleAccount (deterministic address)
+const simpleAccount = await simpleSmartAccount({
+  client: publicClient,
+  entryPoint: ENTRYPOINT_ADDRESS,
+  owner: privateKeyToAccount("0x..."), // publically know hardhat private key #0 used in withdrawal scripts
+});
 
 // Configure paymaster in your smart account client
 const smartAccountClient = createSmartAccountClient({
-  // ... other config
+  account: simpleAccount,
+  entryPoint: ENTRYPOINT_ADDRESS,
+  chain: baseSepolia,
+  bundlerTransport: http("https://api.pimlico.io/v2/base-sepolia/rpc"),
   paymaster: {
     async getPaymasterStubData() {
       return {
@@ -133,4 +146,38 @@ const smartAccountClient = createSmartAccountClient({
     }
   }
 });
+
+// Execute privacy pool withdrawal
+await smartAccountClient.sendUserOperation({
+  calls: [{
+    to: PRIVACY_POOL_ENTRYPOINT,
+    data: relayCallData, // Privacy pool withdrawal call
+  }],
+});
 ```
+
+**Adapting for Other Account Types:**
+- **Biconomy Smart Account**, **Kernel Account**, **Safe Account** or **Custom Accounts** : Update callData parsing in `_extractExecuteCall()` for that account's execute format
+
+## License
+
+This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE) file for details.
+
+## Contributing
+
+We welcome contributions to improve privacy-preserving gas sponsorship! Here's how you can help:
+
+### Ways to Contribute:
+- 🐛 **Bug Reports**: Submit issues with detailed reproduction steps
+- 💡 **Feature Requests**: Suggest improvements for better privacy or efficiency  
+- 🔧 **Code Contributions**: Submit PRs with tests and documentation
+- 📚 **Documentation**: Help improve guides, examples, and explanations
+- 🧪 **Testing**: Add test cases, especially edge cases and gas optimization scenarios
+
+### Community:
+- 💬 **Discussions**: Use GitHub Discussions for questions and ideas
+- 🐦 **Twitter**: Follow [@kdsinghsaini](https://x.com/kdsinghsaini) for updates
+
+## Acknowledgments
+
+Built with ❤️ for **Privacy**, **Ethereum**, **ERC-4337** and **Privacy Pools** by Karandeep Singh [X/Twitter](https://x.com/kdsinghsaini) [Telegram](https://t.me/kdsinghsaini)
