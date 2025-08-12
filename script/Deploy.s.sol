@@ -90,13 +90,19 @@ contract Deploy is Script {
         )));
         console.log("   Paymaster deployed:", paymaster);
 
-        // 6. Fund paymaster for gas sponsorship
-        console.log("6. Funding Paymaster...");
+        // 6. Configure expected smart account for deterministic pattern
+        console.log("6. Configuring Expected Smart Account...");
+        address expectedAccount = 0xa3aBDC7f6334CD3EE466A115f30522377787c024;
+        SimplePrivacyPoolPaymaster(paymaster).setExpectedSmartAccount(expectedAccount);
+        console.log("   Expected smart account set to:", expectedAccount);
+
+        // 7. Fund paymaster for gas sponsorship
+        console.log("7. Funding Paymaster...");
         SimplePrivacyPoolPaymaster(paymaster).deposit{value: 0.1 ether}();
         console.log("   Paymaster funded with 0.1 ETH");
 
-        // 7. Verify deployment
-        console.log("7. Verifying deployment...");
+        // 8. Verify deployment
+        console.log("8. Verifying deployment...");
         require(paymaster.code.length > 0, "Paymaster deployment failed");
         require(ethPrivacyPool.code.length > 0, "Privacy Pool deployment failed");
         require(privacyEntrypoint.code.length > 0, "Entrypoint deployment failed");

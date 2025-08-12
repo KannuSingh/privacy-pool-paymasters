@@ -40,6 +40,10 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
     /// @notice ETH Privacy Pool contract
     IPrivacyPool public immutable ETH_PRIVACY_POOL;
 
+    /// @notice Expected smart account address for deterministic account pattern
+    /// @dev Set via setExpectedSmartAccount(), must be configured before processing UserOps
+    address public expectedSmartAccount;
+
     /// @notice Estimated gas cost for postOp operations (includes ETH refund transfers)
     uint256 public constant POST_OP_GAS_LIMIT = 32000;
 
@@ -53,6 +57,11 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
         bytes32 indexed userOpHash,
         uint256 actualWithdrawalCost,
         uint256 refunded
+    );
+
+    event ExpectedSmartAccountUpdated(
+        address indexed previousAccount,
+        address indexed newAccount
     );
 
 
@@ -69,6 +78,8 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
     error InvalidProcessooor();
     error InvalidScope();
     error ZeroFeeNotAllowed();
+    error ExpectedSmartAccountNotSet();
+    error UnauthorizedSmartAccount();
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -97,6 +108,26 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
      * @notice Allow contract to receive ETH from Privacy Pool fees and refunds
      */
     receive() external payable {}
+
+    /*//////////////////////////////////////////////////////////////
+                        SMART ACCOUNT CONFIGURATION
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Set the expected smart account address for deterministic account pattern
+     * @dev Only owner can set this. Must be set before processing UserOperations.
+     * @param account The smart account address that all UserOperations must come from
+     */
+    function setExpectedSmartAccount(address account) external onlyOwner {
+        if (account == address(0)) {
+            revert InvalidProcessooor(); // Reuse existing error for zero address
+        }
+        
+        address previousAccount = expectedSmartAccount;
+        expectedSmartAccount = account;
+        
+        emit ExpectedSmartAccountUpdated(previousAccount, account);
+    }
 
     /*//////////////////////////////////////////////////////////////
                             POST-OP OPERATIONS
@@ -166,24 +197,30 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
         override
         returns (bytes memory context, uint256 validationData)
     {
-        // 1. Check post-op gas limit is sufficient
+        // 1. Check that expected smart account is configured
+        if (expectedSmartAccount == address(0)) {
+            revert ExpectedSmartAccountNotSet();
+        }
+        
+        // 2. Check that UserOperation comes from expected smart account
+        if (userOp.sender != expectedSmartAccount) {
+            revert UnauthorizedSmartAccount();
+        }
+        
+        // 3. Check post-op gas limit is sufficient
         if (userOp.unpackPostOpGasLimit() < POST_OP_GAS_LIMIT) {
             revert InsufficientPostOpGasLimit();
         }
-        // 2. Comment out factory validation for deterministic account pattern
-        // address factory = _getFactoryFromInitCode(userOp.initCode);
-        // IAccountValidator accountValidator = accountValidators[factory];
-        // if (address(accountValidator) == address(0)) {
-        //     revert UnsupportedAccountFactory();
-        // }
         
-        // 3. Direct callData validation for SimpleAccount.execute()
+        // 4. Direct callData validation for SimpleAccount.execute()
         (address target, uint256 value, bytes memory data) = _extractExecuteCall(userOp.callData);
-        // 4. Validate withdrawal logic
+        
+        // 5. Validate withdrawal logic
         if (!_validatePrivacyPoolWithdrawal(target, value, data)) {
             revert WithdrawalValidationFailed();
         }
-        // 5. Validate economics using values from transient storage
+        
+        // 6. Validate economics using values from transient storage
         // Values were decoded and validated during internal relay call execution
         uint256 withdrawnValue;
         uint256 relayFeeBPS;
