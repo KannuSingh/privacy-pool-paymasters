@@ -159,7 +159,7 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
             : 0;
         // If actual cost is less than expected, refund the difference to the user
         if (refundAmount > 0) {
-            // Transfer refund to user's smart account
+            // Transfer refund to withdrawalRecipient
             (bool success, ) = withdrawalRecipient.call{value: refundAmount}("");
             success; // Suppress unused variable warning
             // We don't revert on failure to avoid blocking the transaction
