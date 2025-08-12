@@ -80,6 +80,7 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
     error ZeroFeeNotAllowed();
     error ExpectedSmartAccountNotSet();
     error UnauthorizedSmartAccount();
+    error SmartAccountNotDeployed();
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -207,20 +208,28 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
             revert UnauthorizedSmartAccount();
         }
         
-        // 3. Check post-op gas limit is sufficient
+        // 3. Ensure smart account is already deployed (no initCode)
+        // This prevents users from being charged for smart account deployment costs
+        // during withdrawal operations. The smart account should be deployed separately
+        // before attempting withdrawals through the paymaster.
+        if (userOp.initCode.length > 0) {
+            revert SmartAccountNotDeployed();
+        }
+        
+        // 4. Check post-op gas limit is sufficient
         if (userOp.unpackPostOpGasLimit() < POST_OP_GAS_LIMIT) {
             revert InsufficientPostOpGasLimit();
         }
         
-        // 4. Direct callData validation for SimpleAccount.execute()
+        // 5. Direct callData validation for SimpleAccount.execute()
         (address target, uint256 value, bytes memory data) = _extractExecuteCall(userOp.callData);
         
-        // 5. Validate withdrawal logic
+        // 6. Validate withdrawal logic
         if (!_validatePrivacyPoolWithdrawal(target, value, data)) {
             revert WithdrawalValidationFailed();
         }
         
-        // 6. Validate economics using values from transient storage
+        // 7. Validate economics using values from transient storage
         // Values were decoded and validated during internal relay call execution
         uint256 withdrawnValue;
         uint256 relayFeeBPS;
