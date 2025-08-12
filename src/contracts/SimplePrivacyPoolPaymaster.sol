@@ -213,7 +213,7 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
         uint256 actualUserOpFeePerGas
     ) internal override {
         // Decode context from validation phase
-        (bytes32 userOpHash, address sender, uint256 expectedFeeAmount) = abi
+        (bytes32 userOpHash, address withdrawalRecipient, uint256 expectedFeeAmount) = abi
             .decode(context, (bytes32, address, uint256));
 
         // Calculate total actual cost including postOp overhead
@@ -225,7 +225,7 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
         // If actual cost is less than expected, refund the difference to the user
         if (refundAmount > 0) {
             // Transfer refund to user's smart account
-            (bool success, ) = sender.call{value: refundAmount}("");
+            (bool success, ) = withdrawalRecipient.call{value: refundAmount}("");
             success; // Suppress unused variable warning
             // We don't revert on failure to avoid blocking the transaction
             // If refund fails, the paymaster keeps the excess
@@ -233,7 +233,7 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
 
         // Emit withdrawal tracking event (regardless of mode)
         emit PrivacyPoolWithdrawalSponsored(
-            sender,
+            withdrawalRecipient,
             userOpHash,
             actualWithdrawalCost, // this is what user paid for withdrawal
             refundAmount
@@ -267,18 +267,15 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
         if (userOp.unpackPostOpGasLimit() < POST_OP_GAS_LIMIT) {
             revert InsufficientPostOpGasLimit();
         }
-        // 2. Only support fresh accounts - extract factory from initCode
-        if (userOp.initCode.length == 0) {
-            revert ExistingAccountNotSupported();
-        }
-        address factory = _getFactoryFromInitCode(userOp.initCode);
-        IAccountValidator accountValidator = accountValidators[factory];
-        if (address(accountValidator) == address(0)) {
-            revert UnsupportedAccountFactory();
-        }
-        // 3. Use account validator to validate callData and extract Privacy Pool call
-        (address target, uint256 value, bytes memory data) = accountValidator
-            .validateAndExtract(userOp.callData);
+        // 2. Comment out factory validation for deterministic account pattern
+        // address factory = _getFactoryFromInitCode(userOp.initCode);
+        // IAccountValidator accountValidator = accountValidators[factory];
+        // if (address(accountValidator) == address(0)) {
+        //     revert UnsupportedAccountFactory();
+        // }
+        
+        // 3. Direct callData validation for SimpleAccount.execute()
+        (address target, uint256 value, bytes memory data) = _extractExecuteCall(userOp.callData);
         // 4. Validate withdrawal logic
         if (!_validatePrivacyPoolWithdrawal(target, value, data)) {
             revert WithdrawalValidationFailed();
@@ -287,10 +284,11 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
         // Values were decoded and validated during internal relay call execution
         uint256 withdrawnValue;
         uint256 relayFeeBPS;
-        
+        address withdrawalRecipient;
         assembly {
             withdrawnValue := tload(0)
             relayFeeBPS := tload(1)
+            withdrawalRecipient := tload(2)
         }
         
         uint256 expectedFeeAmount = (withdrawnValue * relayFeeBPS) / 10_000;
@@ -306,9 +304,10 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
         assembly {
             tstore(0, 0)
             tstore(1, 0)
+            tstore(2, 0)
         }
 
-        return (abi.encode(userOpHash, userOp.sender, expectedFeeAmount), 0);
+        return (abi.encode(userOpHash, withdrawalRecipient, expectedFeeAmount), 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -365,11 +364,13 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
         // Hash of withdrawal value + fee BPS for retrieval
         uint256 withdrawnValue = proof.withdrawnValue();
         uint256 relayFeeBPS = relayData.relayFeeBPS;
-        
+        address withdrawalRecipient = relayData.recipient;
+
         // Store in transient storage (EIP-1153)
         assembly {
             tstore(0, withdrawnValue)
             tstore(1, relayFeeBPS)
+            tstore(2, withdrawalRecipient)
         }
         
         // Ensure non-zero fees to prevent free withdrawals
@@ -419,7 +420,37 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Extract factory address from initCode
+     * @notice Extract target, value, and data from SimpleAccount.execute() callData
+     * @dev Validates callData format and extracts execute parameters
+     * @param callData The UserOperation callData
+     * @return target The target address being called
+     * @return value The ETH value being sent 
+     * @return data The call data to the target
+     */
+    function _extractExecuteCall(bytes calldata callData) 
+        internal 
+        pure 
+        returns (address target, uint256 value, bytes memory data) 
+    {
+        // Check minimum callData length (4 bytes selector + minimal parameters)
+        if (callData.length < 4) {
+            revert InvalidCallData();
+        }
+        
+        // Check if it's SimpleAccount.execute() selector (0xb61d27f6)
+        bytes4 selector = bytes4(callData[:4]);
+        if (selector != 0xb61d27f6) {
+            revert InvalidCallData(); // Not a SimpleAccount.execute() call
+        }
+        
+        // Decode execute parameters: execute(address target, uint256 value, bytes calldata data)
+        (target, value, data) = abi.decode(callData[4:], (address, uint256, bytes));
+        
+        return (target, value, data);
+    }
+
+    /**
+     * @notice Extract factory address from initCode (kept for backward compatibility)
      * @dev For fresh accounts, initCode format is: factory (20 bytes) + calldata
      */
     function _getFactoryFromInitCode(
