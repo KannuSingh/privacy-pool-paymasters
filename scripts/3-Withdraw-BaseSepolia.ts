@@ -58,9 +58,13 @@ const CONFIG = {
         PAYMASTER: "0x1D84295EA19D1EE44ECe18a098789494000aFc04",
         WITHDRAWAL_VERIFIER: "0x4A679253410272dd5232B3Ff7cF5dbB88f295319",
     },
-    
-    // Wallet Configuration
-    PRIVATE_KEY: process.env.PRIVATE_KEY || "0x0000000000000000000000000000000000000000000000000000000000000001",
+
+    // Hardhat account #0 private key (publicly known, will be used for paymaster setup)
+    PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+
+    // Withdrawal recipient address (smart account for paymaster)
+    // This is the address that will receive the withdrawal funds (replace with your address)
+    WITHDRAWAL_RECIPIENT_ADDRESS: "0xF892dc5bBef591D61dD6d75Dfc963c371E723bA4",
     
     // Pimlico Configuration for Account Abstraction
     PIMLICO_API_KEY: process.env.PIMLICO_API_KEY || "your-pimlico-api-key",
@@ -240,15 +244,14 @@ async function executeWithdrawal(depositIndex: number, withdrawalAmount?: bigint
 
     // Note: walletClient not needed for Account Abstraction flow
 
-    // Create smart account for withdrawal
+    // Create smart account for withdrawal (known as privacy pool paymaster account)
     const simpleAccount = await toSimpleSmartAccount({
         owner: account as any,
         client: publicClient as any,
         entryPoint: { address: entryPoint07Address, version: "0.7" },
-        index: randomBigInt(), // Random index for account creation
     });
 
-    console.log(`\n👤 Withdrawal recipient: ${simpleAccount.address}`);
+    console.log(`\n👤 Withdrawal recipient: ${CONFIG.WITHDRAWAL_RECIPIENT_ADDRESS}`);
 
     // Build complete trees from all deposits and ASP history
     console.log(`\n🌳 Building Merkle trees...`);
@@ -294,7 +297,7 @@ async function executeWithdrawal(depositIndex: number, withdrawalAmount?: bigint
                 { type: "address", name: "feeRecipient" },
                 { type: "uint256", name: "relayFeeBPS" },
             ],
-            [simpleAccount.address, CONFIG.CONTRACTS.PAYMASTER as `0x${string}`, BigInt(1000)]
+            [CONFIG.WITHDRAWAL_RECIPIENT_ADDRESS, CONFIG.CONTRACTS.PAYMASTER as `0x${string}`, BigInt(1000)]
         ),
     ] as const;
 
@@ -548,7 +551,7 @@ async function executeWithdrawal(depositIndex: number, withdrawalAmount?: bigint
         transactionHash: receipt.receipt.transactionHash || userOpHash,
         blockNumber: receipt.receipt.blockNumber?.toString() || "0",
         userOpHash: userOpHash,
-        recipient: simpleAccount.address,
+        recipient: CONFIG.WITHDRAWAL_RECIPIENT_ADDRESS,
     };
 
     state.withdrawals.push(withdrawalRecord);
