@@ -48,6 +48,10 @@ const CONFIG = {
     // Hardhat account #0 private key (publicly known, only for testing)
     PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
 
+    // Withdrawal recipient address (where funds should go)
+    // This is the address that will receive the withdrawal funds and any refunds
+    WITHDRAWAL_RECIPIENT_ADDRESS: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", // Hardhat account #0 address
+
     // Chain ID for local Anvil instance
     CHAIN_ID: 1,
 
@@ -71,7 +75,7 @@ const CONFIG = {
 // Entrypoint contract ABI - handles deposits, withdrawals, and ASP root updates
 const ENTRYPOINT_ABI = parseAbi([
     // Update ASP (Approved Set of Participants) root with new merkle root and IPFS CID
-    "function updateRoot(uint256 root, string memory label) external returns (uint256)",
+     "function updateRoot(uint256 _root, string memory _ipfsCID) external returns (uint256 _index)",
 
     // Relay withdrawal transaction with ZK proof - correct ProofLib.WithdrawProof structure
     "function relay((address,bytes) withdrawal, (uint256[2],uint256[2][2],uint256[2],uint256[8]) proofData, uint256 scope) external",
@@ -327,7 +331,8 @@ async function runPrivacyPoolDemo() {
     console.log(`  ASP tree contains label: ${commitment.label.toString().slice(0, 20)}...`);
 
     // Update ASP root (IPFS CID must be 32-64 chars)(ASP provider updates root with depositor label)
-    const mockIPFSCID = "QmYourTestIPFSHashForE2ETestingOnly1234567890"; // 46 chars - valid IPFS CID format
+    const timestamp = new Date().toISOString();
+    const mockIPFSCID = `QmASP${Date.now()}TestingOnly1234567890abcdefg`; // Valid IPFS CID format
     const aspUpdateRootTxHash = await walletClient.writeContract({
         address: addresses.ENTRYPOINT,
         abi: ENTRYPOINT_ABI,
@@ -341,15 +346,16 @@ async function runPrivacyPoolDemo() {
     // STEP 4: Setup Smart Account
     console.log("STEP 4: Setup Smart Account with AA libraries");
 
-    // Create smart account for the user (recipient of funds)
+    // Create smart account for the user (deterministic account for paymaster interaction)
     const smartAccount = await toSimpleSmartAccount({
         owner: account as any, // Use the same account as owner
         client: publicClient as any,
         entryPoint: { address: entryPoint07Address, version: "0.7" },
-        index: randomBigInt(), // Random index for account creation
+        // Using deterministic account (no random index) for consistent testing
     });
 
     console.log(`  Smart Account created: ${smartAccount.address}`);
+    console.log(`  Withdrawal recipient: ${CONFIG.WITHDRAWAL_RECIPIENT_ADDRESS}`);
     
     console.log("STEP 5: Generate withdrawal proof");
 
@@ -380,7 +386,7 @@ async function runPrivacyPoolDemo() {
                 { type: "address", name: "feeRecipient" },
                 { type: "uint256", name: "relayFeeBPS" },
             ],
-            [smartAccount.address, addresses.PAYMASTER, BigInt(100)] // 1% fee
+            [CONFIG.WITHDRAWAL_RECIPIENT_ADDRESS, addresses.PAYMASTER, BigInt(1000)] // 1% fee
         ),
     ] as const;
 
@@ -543,8 +549,8 @@ async function runPrivacyPoolDemo() {
         functionName: "balanceOf",
         args: [addresses.PAYMASTER],
     });
-    const senderBalanceBefore = await publicClient.getBalance({ address: smartAccount.address });
-    console.log(`  Sender balance: ${formatEther(senderBalanceBefore)} ETH`);
+    const recipientBalanceBefore = await publicClient.getBalance({ address: CONFIG.WITHDRAWAL_RECIPIENT_ADDRESS });
+    console.log(`  Recipient balance: ${formatEther(recipientBalanceBefore)} ETH`);
     console.log(`  Paymaster deposit before UserOp: ${formatEther(paymasterDepositBeforeUserOp)} ETH`);
     // console.log(`  Prepared UserOperation:`, {preparedUserOperation});
     const signature = await smartAccount.signUserOperation(preparedUserOperation);
@@ -560,9 +566,11 @@ async function runPrivacyPoolDemo() {
         console.log(`  UserOperation hash: ${userOpHash} actualGasCost: ${receipt.actualGasCost} gasUsed: ${receipt.actualGasUsed}`);
 
         const poolBalance = await publicClient.getBalance({ address: addresses.PRIVACY_POOL });
-        const senderBalance = await publicClient.getBalance({ address: smartAccount.address });
+        const recipientBalanceAfter = await publicClient.getBalance({ address: CONFIG.WITHDRAWAL_RECIPIENT_ADDRESS });
 
         console.log(`  Pool balance after withdrawal: ${formatEther(poolBalance)} ETH`);
+        console.log(`  Recipient balance after withdrawal: ${formatEther(recipientBalanceAfter)} ETH`);
+        console.log(`  Recipient gained: ${formatEther(recipientBalanceAfter - recipientBalanceBefore)} ETH`);
 
         const paymasterDeposit = await publicClient.readContract({
             address: CONFIG.ERC4337_ENTRYPOINT,
@@ -596,7 +604,7 @@ async function runPrivacyPoolDemo() {
         });
         console.log(`  Paymaster deposit remaining: ${formatEther(paymasterDeposit)} ETH`);
         console.log(`  Gas paid by paymaster: ${formatEther(paymasterDepositBeforeUserOp - paymasterDeposit)} ETH`);
-        console.log(`  Sender balance after withdrawal: ${formatEther(senderBalance)} ETH`);
+        // Recipient balance already logged above with the gained amount
 
         console.log(`  Paymaster native balance: ${formatEther(paymasterNativeBalance)} ETH`);
         console.log(`  Paymaster profit: ${formatEther(paymasterDeposit - paymasterDepositBeforeUserOp + paymasterNativeBalance)} ETH`);
