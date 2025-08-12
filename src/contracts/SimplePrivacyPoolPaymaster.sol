@@ -12,7 +12,6 @@ import {IPrivacyPool} from "interfaces/IPrivacyPool.sol";
 import {IEntrypoint} from "interfaces/IEntrypoint.sol";
 import {ProofLib} from "contracts/lib/ProofLib.sol";
 import {Constants} from "contracts/lib/Constants.sol";
-import {IAccountValidator} from "./interfaces/IAccountValidator.sol";
 import {IWithdrawalVerifier} from "./interfaces/IWithdrawalVerifier.sol";
 
 /**
@@ -44,15 +43,6 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
     /// @notice Estimated gas cost for postOp operations (includes ETH refund transfers)
     uint256 public constant POST_OP_GAS_LIMIT = 32000;
 
-    /*//////////////////////////////////////////////////////////////
-                         ACCOUNT FACTORY MANAGEMENT
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Mapping of account factory to its validator
-    mapping(address factory => IAccountValidator validator) public accountValidators;
-
-    /// @notice Array of supported factories for enumeration
-    address[] public supportedFactories;
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -65,13 +55,6 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
         uint256 refunded
     );
 
-    event AccountFactoryAdded(
-        address indexed factory,
-        address indexed validator,
-        string name
-    );
-
-    event AccountFactoryRemoved(address indexed factory);
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -79,13 +62,6 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
 
     error InvalidCallData();
     error InsufficientPostOpGasLimit();
-    error UnsupportedAccountFactory();
-    error AccountFactoryAlreadySupported();
-    error InvalidInitCode();
-    error ExistingAccountNotSupported();
-    error InvalidValidator();
-    error InvalidFactory();
-    error FactoryNotSupported();
     error WithdrawalValidationFailed();
     error InsufficientPaymasterCost();
     error WrongFeeRecipient();
@@ -121,80 +97,6 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
      * @notice Allow contract to receive ETH from Privacy Pool fees and refunds
      */
     receive() external payable {}
-
-    /*//////////////////////////////////////////////////////////////
-                      ACCOUNT FACTORY MANAGEMENT
-    //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @notice Add support for a new account factory
-     * @param factory The account factory address
-     * @param validator The validator for this account factory
-     */
-    function addSupportedFactory(
-        address factory,
-        IAccountValidator validator
-    ) external onlyOwner {
-        if (factory == address(0)) {
-            revert InvalidFactory();
-        }
-        if (address(validator) == address(0)) {
-            revert InvalidValidator();
-        }
-        if (address(accountValidators[factory]) != address(0)) {
-            revert AccountFactoryAlreadySupported();
-        }
-
-        // Validate that the validator supports this factory (commented out for testing)
-        // require(validator.supportedFactory() == factory, "Validator factory mismatch");
-
-        accountValidators[factory] = validator;
-        supportedFactories.push(factory);
-
-        emit AccountFactoryAdded(factory, address(validator), validator.name());
-    }
-
-    /**
-     * @notice Remove support for an account factory
-     * @param factory The account factory address to remove
-     */
-    function removeSupportedFactory(address factory) external onlyOwner {
-        if (address(accountValidators[factory]) == address(0)) {
-            revert UnsupportedAccountFactory();
-        }
-
-        delete accountValidators[factory];
-
-        // Remove from array (swap with last element)
-        for (uint256 i = 0; i < supportedFactories.length; i++) {
-            if (supportedFactories[i] == factory) {
-                supportedFactories[i] = supportedFactories[
-                    supportedFactories.length - 1
-                ];
-                supportedFactories.pop();
-                break;
-            }
-        }
-
-        emit AccountFactoryRemoved(factory);
-    }
-
-    /**
-     * @notice Get list of supported account factories
-     * @return Array of supported factory addresses
-     */
-    function getSupportedFactories() external view returns (address[] memory) {
-        return supportedFactories;
-    }
-
-    /**
-     * @notice Check if an account factory is supported
-     * @param factory The factory address to check
-     * @return True if factory is supported
-     */
-    function isFactorySupported(address factory) external view returns (bool) {
-        return address(accountValidators[factory]) != address(0);
-    }
 
     /*//////////////////////////////////////////////////////////////
                             POST-OP OPERATIONS
@@ -450,18 +352,6 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
         return (target, value, data);
     }
 
-    /**
-     * @notice Extract factory address from initCode (kept for backward compatibility)
-     * @dev For fresh accounts, initCode format is: factory (20 bytes) + calldata
-     */
-    function _getFactoryFromInitCode(
-        bytes calldata initCode
-    ) internal pure returns (address) {
-        if (initCode.length < 20) {
-            revert InvalidInitCode();
-        }
-        return address(bytes20(initCode[:20]));
-    }
 
     /*//////////////////////////////////////////////////////////////
                             CALLDATA DECODING

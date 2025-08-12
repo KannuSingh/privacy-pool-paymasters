@@ -6,7 +6,6 @@ import {console} from "forge-std/console.sol";
 
 // Your NEW paymaster implementation
 import {SimplePrivacyPoolPaymaster} from "privacy-pool-paymasters-contracts/SimplePrivacyPoolPaymaster.sol";
-import {SimpleAccountValidator} from "privacy-pool-paymasters-contracts/validators/SimpleAccountValidator.sol";
 
 // Real Privacy Pool contracts from submodule
 import {Entrypoint} from "contracts/Entrypoint.sol";
@@ -91,29 +90,13 @@ contract Deploy is Script {
         )));
         console.log("   Paymaster deployed:", paymaster);
 
-        // 6. Deploy and configure account validators
-        console.log("6. Setting up Account Validators...");
-        
-        address accountValidator = address(new SimpleAccountValidator(
-            0x91E60e0613810449d098b0b5Ec8b51A0FE8c8985, // SimpleAccountFactory
-            privacyEntrypoint
-        ));
-        console.log("   Account Validator deployed:", accountValidator);
-        
-        // Add the factory to the paymaster
-        SimplePrivacyPoolPaymaster(paymaster).addSupportedFactory(
-            0x91E60e0613810449d098b0b5Ec8b51A0FE8c8985,
-            SimpleAccountValidator(accountValidator)
-        );
-        console.log("   SimpleAccountFactory registered with paymaster");
-
-        // 7. Fund paymaster for gas sponsorship
-        console.log("7. Funding Paymaster...");
+        // 6. Fund paymaster for gas sponsorship
+        console.log("6. Funding Paymaster...");
         SimplePrivacyPoolPaymaster(paymaster).deposit{value: 0.1 ether}();
         console.log("   Paymaster funded with 0.1 ETH");
 
-        // 8. Verify deployment
-        console.log("8. Verifying deployment...");
+        // 7. Verify deployment
+        console.log("7. Verifying deployment...");
         require(paymaster.code.length > 0, "Paymaster deployment failed");
         require(ethPrivacyPool.code.length > 0, "Privacy Pool deployment failed");
         require(privacyEntrypoint.code.length > 0, "Entrypoint deployment failed");
