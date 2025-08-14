@@ -9,34 +9,37 @@ The `SimplePrivacyPoolPaymaster` sponsors user operations for Privacy Pool withd
 ## How It Works
 
 ### Architecture
-The paymaster integrates with four core contracts:
+The paymaster integrates with three core contracts:
 - **Privacy Pool Entrypoint**: Main relay contract that processes withdrawals
-- **ETH Privacy Pool**: The privacy pool where funds are deposited and stored
+- **ETH Privacy Pool**: The privacy pool where funds are deposited and stored  
 - **Withdrawal Verifier**: Groth16 verifier for zero-knowledge proofs
-- **Account Validators**: Modular validators for different account types
+
+### Deterministic Smart Account Pattern
+The paymaster uses a **deterministic smart account approach** for enhanced security and user experience:
+- **Single Expected Account**: Only accepts UserOperations from a pre-configured smart account address
+- **Pre-deployment Required**: Smart account must be deployed before withdrawal operations (prevents deployment cost charging)
+- **Recipient-based Refunds**: Refunds go directly to the recipient specified in RelayData, not the smart account
+- **Cost Predictability**: Users only pay for withdrawal transactions, not account deployment
 
 ### Validation Process
-The paymaster performs a 4-step validation process:
-1. **Account Factory Validation** - Checks if the account factory is supported
-2. **Transaction Structure** - Validates the UserOperation calls the correct Privacy Pool functions
-3. **ZK Proof Verification** - Verifies zero-knowledge proofs and Privacy Pool state consistency  
-4. **Economic Check** - Ensures relay fees cover gas costs and paymaster receives payment
+The paymaster performs a 7-step validation process:
+1. **Configuration Check** - Ensures expected smart account is configured
+2. **Sender Validation** - Verifies UserOperation comes from expected smart account  
+3. **Deployment Check** - Ensures smart account is already deployed (no initCode)
+4. **Gas Limit Check** - Validates sufficient post-operation gas limit
+5. **CallData Validation** - Direct extraction of SimpleAccount.execute() parameters
+6. **ZK Proof Verification** - Verifies zero-knowledge proofs and Privacy Pool state consistency
+7. **Economic Check** - Ensures relay fees cover gas costs and paymaster receives payment
 
-### Account Factory Management
-The paymaster maintains a **whitelist of supported account factories** to ensure security and compatibility. Each factory has a dedicated validator that understands its specific callData format. This approach:
-- **Prevents malicious factories** from creating invalid transactions
-- **Enables multi-account support** (SimpleAccount, Biconomy, etc.)
-- **Ensures proper callData decoding** for each account type
-- **Maintains security standards** through vetted validators
+### Smart Account Configuration  
+The paymaster owner can configure the expected smart account:
 
 ```solidity
-function addSupportedFactory(address factory, IAccountValidator validator) external onlyOwner
-function removeSupportedFactory(address factory) external onlyOwner
-function getSupportedFactories() external view returns (address[] memory)
+function setExpectedSmartAccount(address account) external onlyOwner
 ```
 
-### Gas Management & Fresh Accounts
-The paymaster charges approximately the gas cost of UserOperation execution and refunds any excess funds received (as part of relay fees) back to the user's account. It **only sponsors operations for fresh accounts** (those with `initCode`) to ensure security based on supported factories and is suitable for privacy use cases.
+### Gas Management & Cost Protection
+The paymaster charges approximately the gas cost of UserOperation execution and refunds any excess funds received (as part of relay fees) back to the **recipient address**. It **only sponsors operations for pre-deployed accounts** to protect users from unexpected deployment costs.
 
 ## Development
 
@@ -104,15 +107,28 @@ Copy environment template:
 cp .env.example .env
 ```
 
-### Integration Example
+### Smart Account Integration
+
+This implementation demonstrates using **SimpleAccount** from the [@account-abstraction/contracts](https://github.com/eth-infinitism/account-abstraction) repository. The code can be easily modified to support other account implementations like Biconomy, Kernel, or Safe or other more gas-efficient account:
 
 ```typescript
 import { createSmartAccountClient } from "permissionless";
 import { privateKeyToAccount } from "viem/accounts";
+import { simpleSmartAccount } from "permissionless/accounts";
+
+// Create SimpleAccount (deterministic address)
+const simpleAccount = await simpleSmartAccount({
+  client: publicClient,
+  entryPoint: ENTRYPOINT_ADDRESS,
+  owner: privateKeyToAccount("0x..."), // publically know hardhat private key #0 used in withdrawal scripts
+});
 
 // Configure paymaster in your smart account client
 const smartAccountClient = createSmartAccountClient({
-  // ... other config
+  account: simpleAccount,
+  entryPoint: ENTRYPOINT_ADDRESS,
+  chain: baseSepolia,
+  bundlerTransport: http("https://api.pimlico.io/v2/base-sepolia/rpc"),
   paymaster: {
     async getPaymasterStubData() {
       return {
@@ -130,4 +146,38 @@ const smartAccountClient = createSmartAccountClient({
     }
   }
 });
+
+// Execute privacy pool withdrawal
+await smartAccountClient.sendUserOperation({
+  calls: [{
+    to: PRIVACY_POOL_ENTRYPOINT,
+    data: relayCallData, // Privacy pool withdrawal call
+  }],
+});
 ```
+
+**Adapting for Other Account Types:**
+- **Biconomy Smart Account**, **Kernel Account**, **Safe Account** or **Custom Accounts** : Update callData parsing in `_extractExecuteCall()` for that account's execute format
+
+## License
+
+This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE) file for details.
+
+## Contributing
+
+We welcome contributions to improve privacy-preserving gas sponsorship! Here's how you can help:
+
+### Ways to Contribute:
+- 🐛 **Bug Reports**: Submit issues with detailed reproduction steps
+- 💡 **Feature Requests**: Suggest improvements for better privacy or efficiency  
+- 🔧 **Code Contributions**: Submit PRs with tests and documentation
+- 📚 **Documentation**: Help improve guides, examples, and explanations
+- 🧪 **Testing**: Add test cases, especially edge cases and gas optimization scenarios
+
+### Community:
+- 💬 **Discussions**: Use GitHub Discussions for questions and ideas
+- 🐦 **Twitter**: Follow [@kdsinghsaini](https://x.com/kdsinghsaini) for updates
+
+## Acknowledgments
+
+Built with ❤️ for **Privacy**, **Ethereum**, **ERC-4337** and **Privacy Pools** by Karandeep Singh [X/Twitter](https://x.com/kdsinghsaini) [Telegram](https://t.me/kdsinghsaini)

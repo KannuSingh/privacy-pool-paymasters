@@ -35,22 +35,22 @@ docker compose up -d  # Start Anvil blockchain + Alto bundler + contract deploye
 
 **Core Paymaster Contract:**
 - `src/contracts/SimplePrivacyPoolPaymaster.sol` - Main paymaster implementing ERC-4337 BasePaymaster
-  - Validates UserOperations for privacy pool withdrawals
+  - Validates UserOperations for privacy pool withdrawals using deterministic smart account pattern
   - Embeds withdrawal validation logic to prevent failed sponsorships
   - Uses self-validation pattern for comprehensive withdrawal checking
-  - Manages account factory validators for different account types
-  - Handles post-operation refunds and cost calculations
+  - Direct SimpleAccount.execute() callData parsing for efficiency
+  - Handles recipient-based refunds and cost calculations
+  - Enforces pre-deployed account requirement to prevent deployment cost charging
 
-**Account Validators System:**
-- `src/contracts/interfaces/IAccountValidator.sol` - Interface for account type validation
-- `src/contracts/validators/SimpleAccountValidator.sol` - Validator for SimpleAccount factories
+**Supporting Interfaces:**
 - `src/contracts/interfaces/IWithdrawalVerifier.sol` - ZK proof verification interface
 
 **Key Design Patterns:**
-- **Factory-Based Validation**: Paymaster supports multiple account factories through validator pattern
+- **Deterministic Smart Account**: Single expected account address for all UserOperations
+- **Recipient-Based Refunds**: Refunds go directly to RelayData.recipient instead of smart account
 - **Self-Validation Pattern**: Paymaster pre-validates privacy pool calls using embedded logic
 - **Economics Validation**: Ensures withdrawal fees are sufficient to cover gas costs
-- **Fresh Account Only**: Only sponsors new account deployments, not existing accounts
+- **Pre-deployed Account Only**: Only sponsors operations on existing accounts, prevents deployment cost charging
 
 ### Development Environment
 
@@ -83,14 +83,13 @@ docker compose up -d  # Start Anvil blockchain + Alto bundler + contract deploye
 ### Testing Architecture
 
 **Unit Tests (`test/unit/`):**
-- `SimplePrivacyPoolPaymaster.t.sol` - Core paymaster functionality
-- `SimpleAccountValidator.t.sol` - Account validator logic
+- `SimplePrivacyPoolPaymaster.t.sol` - Core paymaster functionality with deterministic account pattern
 - Mock integration with Privacy Pool contracts
 
 **Integration Tests (`test/integration/`):**
 - End-to-end UserOperation flows with real ZK proofs
-- Account factory integration testing
-- Gas cost validation and refund mechanisms
+- Deterministic smart account integration testing  
+- Gas cost validation and recipient-based refund mechanisms
 
 **Mock Infrastructure (`test/mocks/`):**
 - `MockEntryPoint.sol` - ERC-4337 EntryPoint mock
@@ -121,6 +120,6 @@ docker compose up -d  # Start Anvil blockchain + Alto bundler + contract deploye
 - **Hybrid Build System**: Uses both Foundry (primary) and Hardhat (TypeScript support)
 - **Circuit Dependencies**: Pre-built circuit artifacts required for ZK proof generation
 - **Mock Environment**: Docker-based AA environment with Anvil + Alto bundler for testing
-- **Account Factory Support**: Extensible validator system for supporting different account implementations
+- **Deterministic Smart Account**: Single expected account pattern for enhanced security and cost predictability
 - **Gas Optimization**: High optimizer runs (10,000) for gas-efficient paymaster operations
 - **Privacy Focus**: All operations maintain user anonymity through ZK membership proofs

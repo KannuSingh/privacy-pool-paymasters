@@ -6,7 +6,6 @@ import {console} from "forge-std/console.sol";
 
 // Your NEW paymaster implementation
 import {SimplePrivacyPoolPaymaster} from "privacy-pool-paymasters-contracts/SimplePrivacyPoolPaymaster.sol";
-import {SimpleAccountValidator} from "privacy-pool-paymasters-contracts/validators/SimpleAccountValidator.sol";
 
 // Real Privacy Pool contracts from submodule
 import {Entrypoint} from "contracts/Entrypoint.sol";
@@ -91,21 +90,16 @@ contract Deploy is Script {
         )));
         console.log("   Paymaster deployed:", paymaster);
 
-        // 6. Deploy and configure account validators
-        console.log("6. Setting up Account Validators...");
-        
-        address accountValidator = address(new SimpleAccountValidator(
-            0x91E60e0613810449d098b0b5Ec8b51A0FE8c8985, // SimpleAccountFactory
-            privacyEntrypoint
-        ));
-        console.log("   Account Validator deployed:", accountValidator);
-        
-        // Add the factory to the paymaster
-        SimplePrivacyPoolPaymaster(paymaster).addSupportedFactory(
-            0x91E60e0613810449d098b0b5Ec8b51A0FE8c8985,
-            SimpleAccountValidator(accountValidator)
-        );
-        console.log("   SimpleAccountFactory registered with paymaster");
+        // 6. Configure expected smart account for deterministic pattern
+        console.log("6. Configuring Expected Smart Account...");
+        // NOTE: To get the correct address:
+        // 1. Deploy a SimpleAccount using SimpleAccountFactory with the same private key
+        //    used in your withdrawal scripts (e.g., Hardhat account #0)
+        // 2. Use SimpleAccountFactory.getAddress(owner, salt) to get deterministic address
+        // 3. Or run a withdrawal script once to deploy the account and use that address
+        address expectedAccount = 0xa3aBDC7f6334CD3EE466A115f30522377787c024;
+        SimplePrivacyPoolPaymaster(paymaster).setExpectedSmartAccount(expectedAccount);
+        console.log("   Expected smart account set to:", expectedAccount);
 
         // 7. Fund paymaster for gas sponsorship
         console.log("7. Funding Paymaster...");

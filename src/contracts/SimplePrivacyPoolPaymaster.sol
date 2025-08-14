@@ -12,7 +12,6 @@ import {IPrivacyPool} from "interfaces/IPrivacyPool.sol";
 import {IEntrypoint} from "interfaces/IEntrypoint.sol";
 import {ProofLib} from "contracts/lib/ProofLib.sol";
 import {Constants} from "contracts/lib/Constants.sol";
-import {IAccountValidator} from "./interfaces/IAccountValidator.sol";
 import {IWithdrawalVerifier} from "./interfaces/IWithdrawalVerifier.sol";
 
 /**
@@ -41,18 +40,13 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
     /// @notice ETH Privacy Pool contract
     IPrivacyPool public immutable ETH_PRIVACY_POOL;
 
+    /// @notice Expected smart account address for deterministic account pattern
+    /// @dev Set via setExpectedSmartAccount(), must be configured before processing UserOps
+    address public expectedSmartAccount;
+
     /// @notice Estimated gas cost for postOp operations (includes ETH refund transfers)
     uint256 public constant POST_OP_GAS_LIMIT = 32000;
 
-    /*//////////////////////////////////////////////////////////////
-                         ACCOUNT FACTORY MANAGEMENT
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Mapping of account factory to its validator
-    mapping(address factory => IAccountValidator validator) public accountValidators;
-
-    /// @notice Array of supported factories for enumeration
-    address[] public supportedFactories;
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -65,13 +59,11 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
         uint256 refunded
     );
 
-    event AccountFactoryAdded(
-        address indexed factory,
-        address indexed validator,
-        string name
+    event ExpectedSmartAccountUpdated(
+        address indexed previousAccount,
+        address indexed newAccount
     );
 
-    event AccountFactoryRemoved(address indexed factory);
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -79,13 +71,6 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
 
     error InvalidCallData();
     error InsufficientPostOpGasLimit();
-    error UnsupportedAccountFactory();
-    error AccountFactoryAlreadySupported();
-    error InvalidInitCode();
-    error ExistingAccountNotSupported();
-    error InvalidValidator();
-    error InvalidFactory();
-    error FactoryNotSupported();
     error WithdrawalValidationFailed();
     error InsufficientPaymasterCost();
     error WrongFeeRecipient();
@@ -93,6 +78,9 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
     error InvalidProcessooor();
     error InvalidScope();
     error ZeroFeeNotAllowed();
+    error ExpectedSmartAccountNotSet();
+    error UnauthorizedSmartAccount();
+    error SmartAccountNotDeployed();
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -123,77 +111,23 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
     receive() external payable {}
 
     /*//////////////////////////////////////////////////////////////
-                      ACCOUNT FACTORY MANAGEMENT
+                        SMART ACCOUNT CONFIGURATION
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Add support for a new account factory
-     * @param factory The account factory address
-     * @param validator The validator for this account factory
+     * @notice Set the expected smart account address for deterministic account pattern
+     * @dev Only owner can set this. Must be set before processing UserOperations.
+     * @param account The smart account address that all UserOperations must come from
      */
-    function addSupportedFactory(
-        address factory,
-        IAccountValidator validator
-    ) external onlyOwner {
-        if (factory == address(0)) {
-            revert InvalidFactory();
+    function setExpectedSmartAccount(address account) external onlyOwner {
+        if (account == address(0)) {
+            revert InvalidProcessooor(); // Reuse existing error for zero address
         }
-        if (address(validator) == address(0)) {
-            revert InvalidValidator();
-        }
-        if (address(accountValidators[factory]) != address(0)) {
-            revert AccountFactoryAlreadySupported();
-        }
-
-        // Validate that the validator supports this factory (commented out for testing)
-        // require(validator.supportedFactory() == factory, "Validator factory mismatch");
-
-        accountValidators[factory] = validator;
-        supportedFactories.push(factory);
-
-        emit AccountFactoryAdded(factory, address(validator), validator.name());
-    }
-
-    /**
-     * @notice Remove support for an account factory
-     * @param factory The account factory address to remove
-     */
-    function removeSupportedFactory(address factory) external onlyOwner {
-        if (address(accountValidators[factory]) == address(0)) {
-            revert UnsupportedAccountFactory();
-        }
-
-        delete accountValidators[factory];
-
-        // Remove from array (swap with last element)
-        for (uint256 i = 0; i < supportedFactories.length; i++) {
-            if (supportedFactories[i] == factory) {
-                supportedFactories[i] = supportedFactories[
-                    supportedFactories.length - 1
-                ];
-                supportedFactories.pop();
-                break;
-            }
-        }
-
-        emit AccountFactoryRemoved(factory);
-    }
-
-    /**
-     * @notice Get list of supported account factories
-     * @return Array of supported factory addresses
-     */
-    function getSupportedFactories() external view returns (address[] memory) {
-        return supportedFactories;
-    }
-
-    /**
-     * @notice Check if an account factory is supported
-     * @param factory The factory address to check
-     * @return True if factory is supported
-     */
-    function isFactorySupported(address factory) external view returns (bool) {
-        return address(accountValidators[factory]) != address(0);
+        
+        address previousAccount = expectedSmartAccount;
+        expectedSmartAccount = account;
+        
+        emit ExpectedSmartAccountUpdated(previousAccount, account);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -214,7 +148,7 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
         uint256 actualUserOpFeePerGas
     ) internal override {
         // Decode context from validation phase
-        (bytes32 userOpHash, address sender, uint256 expectedFeeAmount) = abi
+        (bytes32 userOpHash, address withdrawalRecipient, uint256 expectedFeeAmount) = abi
             .decode(context, (bytes32, address, uint256));
 
         // Calculate total actual cost including postOp overhead
@@ -225,8 +159,8 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
             : 0;
         // If actual cost is less than expected, refund the difference to the user
         if (refundAmount > 0) {
-            // Transfer refund to user's smart account
-            (bool success, ) = sender.call{value: refundAmount}("");
+            // Transfer refund to withdrawalRecipient
+            (bool success, ) = withdrawalRecipient.call{value: refundAmount}("");
             success; // Suppress unused variable warning
             // We don't revert on failure to avoid blocking the transaction
             // If refund fails, the paymaster keeps the excess
@@ -234,7 +168,7 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
 
         // Emit withdrawal tracking event (regardless of mode)
         emit PrivacyPoolWithdrawalSponsored(
-            sender,
+            withdrawalRecipient,
             userOpHash,
             actualWithdrawalCost, // this is what user paid for withdrawal
             refundAmount
@@ -264,34 +198,46 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
         override
         returns (bytes memory context, uint256 validationData)
     {
-        // 1. Check post-op gas limit is sufficient
+        // 1. Check that expected smart account is configured
+        if (expectedSmartAccount == address(0)) {
+            revert ExpectedSmartAccountNotSet();
+        }
+        
+        // 2. Check that UserOperation comes from expected smart account
+        if (userOp.sender != expectedSmartAccount) {
+            revert UnauthorizedSmartAccount();
+        }
+        
+        // 3. Ensure smart account is already deployed (no initCode)
+        // This prevents users from being charged for smart account deployment costs
+        // during withdrawal operations. The smart account should be deployed separately
+        // before attempting withdrawals through the paymaster.
+        if (userOp.initCode.length > 0) {
+            revert SmartAccountNotDeployed();
+        }
+        
+        // 4. Check post-op gas limit is sufficient
         if (userOp.unpackPostOpGasLimit() < POST_OP_GAS_LIMIT) {
             revert InsufficientPostOpGasLimit();
         }
-        // 2. Only support fresh accounts - extract factory from initCode
-        if (userOp.initCode.length == 0) {
-            revert ExistingAccountNotSupported();
-        }
-        address factory = _getFactoryFromInitCode(userOp.initCode);
-        IAccountValidator accountValidator = accountValidators[factory];
-        if (address(accountValidator) == address(0)) {
-            revert UnsupportedAccountFactory();
-        }
-        // 3. Use account validator to validate callData and extract Privacy Pool call
-        (address target, uint256 value, bytes memory data) = accountValidator
-            .validateAndExtract(userOp.callData);
-        // 4. Validate withdrawal logic
+        
+        // 5. Direct callData validation for SimpleAccount.execute()
+        (address target, uint256 value, bytes memory data) = _extractExecuteCall(userOp.callData);
+        
+        // 6. Validate withdrawal logic
         if (!_validatePrivacyPoolWithdrawal(target, value, data)) {
             revert WithdrawalValidationFailed();
         }
-        // 5. Validate economics using values from transient storage
+        
+        // 7. Validate economics using values from transient storage
         // Values were decoded and validated during internal relay call execution
         uint256 withdrawnValue;
         uint256 relayFeeBPS;
-        
+        address withdrawalRecipient;
         assembly {
             withdrawnValue := tload(0)
             relayFeeBPS := tload(1)
+            withdrawalRecipient := tload(2)
         }
         
         uint256 expectedFeeAmount = (withdrawnValue * relayFeeBPS) / 10_000;
@@ -307,9 +253,10 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
         assembly {
             tstore(0, 0)
             tstore(1, 0)
+            tstore(2, 0)
         }
 
-        return (abi.encode(userOpHash, userOp.sender, expectedFeeAmount), 0);
+        return (abi.encode(userOpHash, withdrawalRecipient, expectedFeeAmount), 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -366,11 +313,13 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
         // Hash of withdrawal value + fee BPS for retrieval
         uint256 withdrawnValue = proof.withdrawnValue();
         uint256 relayFeeBPS = relayData.relayFeeBPS;
-        
+        address withdrawalRecipient = relayData.recipient;
+
         // Store in transient storage (EIP-1153)
         assembly {
             tstore(0, withdrawnValue)
             tstore(1, relayFeeBPS)
+            tstore(2, withdrawalRecipient)
         }
         
         // Ensure non-zero fees to prevent free withdrawals
@@ -420,17 +369,35 @@ contract SimplePrivacyPoolPaymaster is BasePaymaster {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Extract factory address from initCode
-     * @dev For fresh accounts, initCode format is: factory (20 bytes) + calldata
+     * @notice Extract target, value, and data from SimpleAccount.execute() callData
+     * @dev Validates callData format and extracts execute parameters
+     * @param callData The UserOperation callData
+     * @return target The target address being called
+     * @return value The ETH value being sent 
+     * @return data The call data to the target
      */
-    function _getFactoryFromInitCode(
-        bytes calldata initCode
-    ) internal pure returns (address) {
-        if (initCode.length < 20) {
-            revert InvalidInitCode();
+    function _extractExecuteCall(bytes calldata callData) 
+        internal 
+        pure 
+        returns (address target, uint256 value, bytes memory data) 
+    {
+        // Check minimum callData length (4 bytes selector + minimal parameters)
+        if (callData.length < 4) {
+            revert InvalidCallData();
         }
-        return address(bytes20(initCode[:20]));
+        
+        // Check if it's SimpleAccount.execute() selector (0xb61d27f6)
+        bytes4 selector = bytes4(callData[:4]);
+        if (selector != 0xb61d27f6) {
+            revert InvalidCallData(); // Not a SimpleAccount.execute() call
+        }
+        
+        // Decode execute parameters: execute(address target, uint256 value, bytes calldata data)
+        (target, value, data) = abi.decode(callData[4:], (address, uint256, bytes));
+        
+        return (target, value, data);
     }
+
 
     /*//////////////////////////////////////////////////////////////
                             CALLDATA DECODING
